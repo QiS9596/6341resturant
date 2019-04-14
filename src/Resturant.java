@@ -57,8 +57,11 @@ class resource_controller{
     private int max_tables;
 
     private static Lock burger_machine = new ReentrantLock();
+    private Boolean burger_machine_avail = true;
     private static Lock fries_machine = new ReentrantLock();
+    private Boolean fries_machine_avil = true;
     private static Lock coke_machine = new ReentrantLock();
+    private Boolean coke_machine_avil = true;
     private static Condition burger_machine_cd = burger_machine.newCondition();
     private static Condition fires_machine_cd = fries_machine.newCondition();
     private static Condition coke_machine_cd = coke_machine.newCondition();
@@ -98,22 +101,49 @@ class resource_controller{
         }
         tbl_lock.unlock();
     }
-    public void aquire_burger_machine(){
+    public boolean aquire_burger_machine(){
+        boolean result = false;
         burger_machine.lock();
+        if (burger_machine_avail){
+            burger_machine_avail = false;
+            result = true;
+        }
+        burger_machine.unlock();
+        return result;
     }
     public void release_burger_machine(){
+        burger_machine.lock();
+        burger_machine_avail = true;
         burger_machine.unlock();
     }
-    public void aquire_fries_machine(){
+    public boolean aquire_fries_machine(){
+        boolean result = false;
         fries_machine.lock();
+        if(fries_machine_avil){
+            fries_machine_avil = false;
+            result = true;
+        }
+        fries_machine.unlock();
+        return result;
     }
     public void release_fries_machine(){
+        fries_machine.lock();
+        fries_machine_avil = true;
         fries_machine.unlock();
     }
-    public void aquire_coke_machine(){
+    public boolean aquire_coke_machine(){
+        boolean result = false;
         coke_machine.lock();
+        if(coke_machine_avil){
+            coke_machine_avil = false;
+            result = true;
+        }
+        coke_machine.unlock();
+        return result;
     }
     public void release_coke_machine(){
+        coke_machine.lock();
+        coke_machine_avil = true;
         coke_machine.unlock();
     }
 }
