@@ -53,8 +53,11 @@ public class Resturant {
             }
             times ++;
         }
-        System.out.println("customer gone");
-        System.out.println(Customer.last_time);
+        System.out.println("All customer finished meal @ time "+ Customer.last_time);
+        GlobalTimerThread.stoprunning();
+
+        om.stoprunning();
+        executor1.shutdown();
         return;
     }
 }
@@ -230,6 +233,8 @@ class Order {
 class OrderManager{
     public static Lock order_manager_lk = new ReentrantLock();
     public static Condition order_manager_cd = order_manager_lk.newCondition();
+    private static Lock stop_lock = new ReentrantLock();
+    private static Boolean stop = false;
     public ArrayList<Order> orders;
     private int avil_order = 0;
     public OrderManager(){
@@ -249,11 +254,26 @@ class OrderManager{
         order_manager_lk.unlock();
     }
 
+    public void stoprunning(){
+        stop_lock.lock();
+        stop = true;
+        stop_lock.unlock();
+        order_manager_lk.lock();
+        order_manager_cd.signalAll();
+        order_manager_lk.unlock();
+    }
+
     public int assignOrder(){
         order_manager_lk.lock();
         while (avil_order <=0){
             try{
             order_manager_cd.await();
+            stop_lock.lock();
+            if(stop){
+                stop_lock.unlock();
+                return -1;
+            }
+            stop_lock.unlock();
             }catch (InterruptedException e){}
         }
         avil_order -= 1;
@@ -302,8 +322,11 @@ class Cook extends Thread{
     public void run(){
         for (int times = 0; times < 2*customer_num; times++){
             int currentOrder = om.assignOrder();
+            if(currentOrder < 0){
+                return;
+            }
             Order myorder = om.getOrderObj(currentOrder);
-            System.out.println("Cook: " + id + " assigned order of Customer: " + myorder.id);
+            System.out.println("Cook: " + id + " assigned order of Customer: " + myorder.id + ", @ time "+gt.getTime());
 
             int burger_completed = 0;
             int fries_completed = 0;
@@ -316,7 +339,7 @@ class Cook extends Thread{
                 if(burger_completed< myorder.burger_order){
                     //if the burgermachine is granted
                     if(rc.aquire_burger_machine()){
-                        System.out.println("Cook: " + id + " using burger machine to work on the order of Customer "+ myorder.id);
+                        System.out.println("Cook: " + id + " using burger machine to work on the order of Customer "+ myorder.id+ ", @ time "+gt.getTime());
                         //fullfil all the burger order in this order
                         while(burger_completed < myorder.burger_order){
                             int a = gt.getTime()+5;
@@ -330,7 +353,7 @@ class Cook extends Thread{
                 }
                 if(fries_completed < myorder.fries_order){
                     if(rc.aquire_fries_machine()){
-                        System.out.println("Cook: "+ id + " using fries machine to work on the order of Customer " + myorder.id);
+                        System.out.println("Cook: "+ id + " using fries machine to work on the order of Customer " + myorder.id+ ", @ time "+gt.getTime());
                         while(fries_completed < myorder.fries_order){
                             gt.waitForTime(gt.getTime()+3);
                             fries_completed += 1;
@@ -340,7 +363,7 @@ class Cook extends Thread{
                 }
                 if(coke_completed< myorder.coke_order){
                     if(rc.aquire_coke_machine()){
-                        System.out.println("Cook: " + id + " using coke machine to work on the order of Customer " + myorder.id);
+                        System.out.println("Cook: " + id + " using coke machine to work on the order of Customer " + myorder.id+ ", @ time "+gt.getTime());
                         while(coke_completed < myorder.coke_order){
                             gt.waitForTime(gt.getTime() + 1);
                             coke_completed += 1;
@@ -361,7 +384,8 @@ class GlobalTimerThread extends Thread{
     private int time = 0;
     public static Lock timer_lk = new ReentrantLock();
     public static Condition timer_cd = timer_lk.newCondition();
-    
+    private static Boolean stop = false;
+    private static Lock stop_lk = new ReentrantLock();
     public void run(){
         while(time < 500){
             try{sleep(100);}catch (InterruptedException e){}
@@ -370,7 +394,12 @@ class GlobalTimerThread extends Thread{
             time = time +1;
             timer_cd.signalAll();
             timer_lk.unlock();
-
+            stop_lk.lock();
+            if(stop){
+                stop_lk.unlock();
+                break;
+            }
+            stop_lk.unlock();
         }
     }
     public void waitForTime(int targetTime){
@@ -389,5 +418,10 @@ class GlobalTimerThread extends Thread{
         result = this.time;
         timer_lk.unlock();
         return result;
+    }
+    public static void stoprunning(){
+        stop_lk.lock();
+        stop = true;
+        stop_lk.unlock();
     }
 }
