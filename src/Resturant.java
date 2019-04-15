@@ -11,31 +11,28 @@ public class Resturant {
         String a = input.nextLine().replaceAll(" |\n","");
         String b= input.nextLine().replaceAll(" |\n","");
         String c = input.nextLine().replaceAll(" |\n","");
-        System.out.println(a);
-        System.out.println(b);
-        System.out.println(c);
         int num_diners = Integer.parseInt(a);
         int num_tables = Integer.parseInt(b);
         int num_cooks = Integer.parseInt(c);
 
         ExecutorService executor = Executors.newFixedThreadPool(num_cooks+num_diners+10);
-        System.out.println("hello,world");
+        ExecutorService executor1 = Executors.newFixedThreadPool(num_cooks+num_diners+10);
+
 //        ExecutorService executor = Executors.newFixedThreadPool(20);
         resource_controller rc = new resource_controller(num_tables);
         GlobalTimerThread GT = new GlobalTimerThread();
         OrderManager om = new OrderManager();
-
+//        ArrayList<Cook> cooks = new ArrayList<>()
         for(int i = 0; i < num_cooks; i++){
-            executor.execute(new Cook(om, rc, GT, i));
+
+            executor1.execute(new Cook(om, rc, GT, i,num_diners));
         }
 
         for(int i = 0; i < num_diners; i++){
             String a_cust = input.nextLine();
-            System.out.println(a_cust);
+
             String[] a_cust_info = a_cust.split(" ");
-            System.out.println(a_cust_info.length);
-            System.out.println(a_cust_info[a_cust_info.length-1]);
-            System.out.println(a_cust_info[a_cust_info.length-1].length());
+
             Order this_order = new Order();
             this_order.burger_order = Integer.parseInt(a_cust_info[1]);
             this_order.fries_order = Integer.parseInt(a_cust_info[2]);
@@ -45,12 +42,20 @@ public class Resturant {
             this_order.id = i;
             executor.execute(new Customer(rc, Integer.parseInt(a_cust_info[0]),this_order, om, GT));
         }
-        executor.execute(GT);
+        executor1.execute(GT);
+        try{}catch (Exception e){}
         executor.shutdown();
+        int times = 0;
         while (!executor.isTerminated()){
-
+            if(times >= 100000000){
+//            System.out.println(((ThreadPoolExecutor)executor).getActiveCount());
+            times = 0;
+            }
+            times ++;
         }
-
+        System.out.println("customer gone");
+        System.out.println(Customer.last_time);
+        return;
     }
 }
 /**
@@ -108,11 +113,13 @@ class resource_controller{
             }
         }
         this.table_num -= 1;
-        int tbl_idx = 0;
+
+        int tbl_idx = -1;
         for (int i = 0; i<this.tables.length; i++){
             if(tables[i] == 1){
                 tables[i] = 0;
                 tbl_idx = i;
+                break;
             }
         }
         tbl_lock.unlock();
@@ -180,6 +187,8 @@ class resource_controller{
 }
 
 class Customer extends Thread{
+    public static int last_time = 0;
+    public static Lock lockofTime = new ReentrantLock();
     public Order my_order;
     public int entering_time;
     private OrderManager om;
@@ -197,10 +206,14 @@ class Customer extends Thread{
 //        System.out.println("customer object created");
         gt.waitForTime(this.entering_time);
         int table = rc.aquire_a_table();
-        System.out.println("granted table");
+        System.out.println("Customer: " + this.my_order.id + " seated at table "+ table + " @ time:"+gt.getTime());
         om.addOrder(this.my_order);
-        System.out.println(this.my_order.id + ":order fulfilled");
-        gt.waitForTime(30);
+        System.out.println("Customer: " + this.my_order.id + ": got their food, @ time:"+gt.getTime());
+        gt.waitForTime(gt.getTime() + 30);
+        int left_time = gt.getTime();
+        lockofTime.lock();
+        last_time = left_time;
+        lockofTime.unlock();
         rc.release_a_table(table);
     }
 }
@@ -223,6 +236,7 @@ class OrderManager{
         orders = new ArrayList<>();
     }
     public void addOrder(Order my_order){
+
         order_manager_lk.lock();
         orders.add(my_order);
         avil_order += 1;
@@ -239,14 +253,18 @@ class OrderManager{
         order_manager_lk.lock();
         while (avil_order <=0){
             try{
-            order_manager_cd.await();}catch (InterruptedException e){}
+            order_manager_cd.await();
+            }catch (InterruptedException e){}
         }
         avil_order -= 1;
         int result = 0;
+
         for (int index = 0; index < orders.size();index++)
         {
             if(orders.get(index).assigned == 0){
                 result = index;
+                orders.get(index).assigned = 1;
+                break;
             }
         }
         order_manager_lk.unlock();
@@ -263,6 +281,7 @@ class OrderManager{
         order_manager_lk.lock();
         orders.get(orderNum).fulfilled = 1;
         order_manager_cd.signalAll();
+        order_manager_cd.signalAll();
         order_manager_lk.unlock();
     }
 }
@@ -272,17 +291,19 @@ class Cook extends Thread{
     private resource_controller rc;
     private GlobalTimerThread gt;
     private int id;
-    public Cook(OrderManager om, resource_controller rc, GlobalTimerThread gt, int id){
+    private int customer_num;
+    public Cook(OrderManager om, resource_controller rc, GlobalTimerThread gt, int id, int customer_num){
         this.om = om;
         this.gt = gt;
         this.rc = rc;
         this.id = id;
+        this.customer_num = customer_num;
     }
     public void run(){
-        while(true){
+        for (int times = 0; times < 2*customer_num; times++){
             int currentOrder = om.assignOrder();
             Order myorder = om.getOrderObj(currentOrder);
-            System.out.println("Cook " + id + " assigned order " + myorder.id);
+            System.out.println("Cook: " + id + " assigned order of Customer: " + myorder.id);
 
             int burger_completed = 0;
             int fries_completed = 0;
@@ -291,20 +312,15 @@ class Cook extends Thread{
             while(burger_completed < myorder.burger_order
                 || fries_completed < myorder.fries_order
                 || coke_completed < myorder.coke_order){
-                System.out.println("Cook " + id + " assigned order " + myorder.id);
-                System.out.println("current burger "+burger_completed);
-                System.out.println("current fries "+fries_completed);
-                System.out.println("current cokes" + coke_completed);
                 //if more burger needed, try grab the burger machine
                 if(burger_completed< myorder.burger_order){
                     //if the burgermachine is granted
-                    System.out.println("try to grab burger machine");
                     if(rc.aquire_burger_machine()){
-                        System.out.println("get the burger machine");
+                        System.out.println("Cook: " + id + " using burger machine to work on the order of Customer "+ myorder.id);
                         //fullfil all the burger order in this order
                         while(burger_completed < myorder.burger_order){
                             int a = gt.getTime()+5;
-                            System.out.println("start looping, asking for "+ a);
+
                             gt.waitForTime(a);
                             burger_completed += 1;
                         }
@@ -314,6 +330,7 @@ class Cook extends Thread{
                 }
                 if(fries_completed < myorder.fries_order){
                     if(rc.aquire_fries_machine()){
+                        System.out.println("Cook: "+ id + " using fries machine to work on the order of Customer " + myorder.id);
                         while(fries_completed < myorder.fries_order){
                             gt.waitForTime(gt.getTime()+3);
                             fries_completed += 1;
@@ -323,6 +340,7 @@ class Cook extends Thread{
                 }
                 if(coke_completed< myorder.coke_order){
                     if(rc.aquire_coke_machine()){
+                        System.out.println("Cook: " + id + " using coke machine to work on the order of Customer " + myorder.id);
                         while(coke_completed < myorder.coke_order){
                             gt.waitForTime(gt.getTime() + 1);
                             coke_completed += 1;
@@ -330,8 +348,6 @@ class Cook extends Thread{
                         rc.release_coke_machine();
                     }
                 }
-                System.out.println("cook id "+ this.id);
-                System.out.println("order id "+ myorder.id);
 //                try{
 //                    sleep(1000);
 //                }catch (InterruptedException e){}
@@ -345,18 +361,19 @@ class GlobalTimerThread extends Thread{
     private int time = 0;
     public static Lock timer_lk = new ReentrantLock();
     public static Condition timer_cd = timer_lk.newCondition();
+    
     public void run(){
-        while(time < 5000){
+        while(time < 500){
             try{sleep(100);}catch (InterruptedException e){}
             timer_lk.lock();
 
             time = time +1;
             timer_cd.signalAll();
             timer_lk.unlock();
+
         }
     }
     public void waitForTime(int targetTime){
-        System.out.println(targetTime);
 
         timer_lk.lock();
         while(targetTime > this.time){
