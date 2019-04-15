@@ -4,7 +4,7 @@ import java.util.concurrent.locks.*;
 import java.util.Scanner;
 public class Resturant {
     public static void main(String[] args) {
-
+        //read input
         Scanner input = new Scanner(System.in);
         String a = input.nextLine().replaceAll(" |\n","");
         String b= input.nextLine().replaceAll(" |\n","");
@@ -12,18 +12,17 @@ public class Resturant {
         int num_diners = Integer.parseInt(a);
         int num_tables = Integer.parseInt(b);
         int num_cooks = Integer.parseInt(c);
+        //executor_cust is responsible for holding all customer threads
+        ExecutorService executor_cust = Executors.newFixedThreadPool(num_cooks+num_diners+10);
+        //executor_rest is responsible for holding all resturant threads
+        ExecutorService executor_rest = Executors.newFixedThreadPool(num_cooks+num_diners+10);
 
-        ExecutorService executor = Executors.newFixedThreadPool(num_cooks+num_diners+10);
-        ExecutorService executor1 = Executors.newFixedThreadPool(num_cooks+num_diners+10);
-
-//        ExecutorService executor = Executors.newFixedThreadPool(20);
         resource_controller rc = new resource_controller(num_tables);
         GlobalTimerThread GT = new GlobalTimerThread();
         OrderManager om = new OrderManager();
-//        ArrayList<Cook> cooks = new ArrayList<>()
-        for(int i = 0; i < num_cooks; i++){
 
-            executor1.execute(new Cook(om, rc, GT, i,num_diners));
+        for(int i = 0; i < num_cooks; i++){
+            executor_rest.execute(new Cook(om, rc, GT, i,num_diners));
         }
 
         for(int i = 0; i < num_diners; i++){
@@ -38,15 +37,15 @@ public class Resturant {
             this_order.fulfilled = 0;
             this_order.assigned = 0;
             this_order.id = i;
-            executor.execute(new Customer(rc, Integer.parseInt(a_cust_info[0]),this_order, om, GT));
+            executor_cust.execute(new Customer(rc, Integer.parseInt(a_cust_info[0]),this_order, om, GT));
         }
-        executor1.execute(GT);
+        executor_rest.execute(GT);
         try{}catch (Exception e){}
-        executor.shutdown();
+        executor_cust.shutdown();
         int times = 0;
-        while (!executor.isTerminated()){
+        while (!executor_cust.isTerminated()){
             if(times >= 100000000){
-//            System.out.println(((ThreadPoolExecutor)executor).getActiveCount());
+//            System.out.println(((ThreadPoolExecutor)executor_cust).getActiveCount());
             times = 0;
             }
             times ++;
@@ -55,7 +54,7 @@ public class Resturant {
         GlobalTimerThread.stoprunning();
 
         om.stoprunning();
-        executor1.shutdown();
+        executor_rest.shutdown();
         return;
     }
 }
@@ -269,6 +268,7 @@ class OrderManager{
             stop_lock.lock();
             if(stop){
                 stop_lock.unlock();
+                order_manager_lk.unlock();
                 return -1;
             }
             stop_lock.unlock();
